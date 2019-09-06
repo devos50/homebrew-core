@@ -21,40 +21,40 @@ class LibtorrentRasterbar < Formula
   depends_on "pkg-config" => :build
   depends_on "boost"
   depends_on "boost-python3"
+  depends_on "cmake" => :build
   depends_on "openssl"
   depends_on "python"
 
   def install
-    args = %W[
-      --disable-debug
-      --disable-dependency-tracking
-      --disable-silent-rules
-      --prefix=#{prefix}
-      --enable-encryption
-      --enable-python-binding
-      --with-boost=#{Formula["boost"].opt_prefix}
-      --with-boost-python=boost_python37-mt
-      PYTHON=python3
+    args = std_cmake_args + %W[
+      -DCMAKE_BUILD_TYPE=Release
+      -Dpython-bindings=ON
+      -DCMAKE_CXX_STANDARD=11
+      -DCMAKE_INSTALL_PREFIX=#{prefix}
+      -Dboost-python-module-name=python37
     ]
 
-    if build.head?
-      system "./bootstrap.sh", *args
-    else
-      system "./configure", *args
+    # CMake picks up the system's python dylib, even if we have a brewed one.
+    py3ver = Language::Python.major_minor_version "python3"
+    py3prefix = Formula["python3"].opt_frameworks/"Python.framework/Versions/#{py3ver}"
+
+    args << "-DPYTHON_EXECUTABLE=#{py3prefix}/bin/python3"
+    args << "-DPYTHON_LIBRARY=#{py3prefix}/lib/libpython#{py3ver}.dylib"
+    args << "-DPYTHON_INCLUDE_DIR=#{py3prefix}/include/python#{py3ver}m"
+
+    # CMake picks up boost-python instead of boost-python3
+    args << "-DBoost_INCLUDE_DIR=#{Formula["boost"].opt_include}"
+    args << "-DBoost_LIBRARY_DIRS=#{Formula["boost"].opt_lib}:#{Formula["boost-python3"].opt_lib}"
+
+    mkdir "builddir" do
+      system "cmake", "..", *args
+      system "make", "install"
     end
 
-    system "make", "install"
     libexec.install "examples"
   end
 
   test do
-    system ENV.cxx, "-std=c++11", "-I#{Formula["boost"].include}/boost",
-                    "-L#{lib}", "-ltorrent-rasterbar",
-                    "-L#{Formula["boost"].lib}", "-lboost_system",
-                    "-framework", "SystemConfiguration",
-                    "-framework", "CoreFoundation",
-                    libexec/"examples/make_torrent.cpp", "-o", "test"
-    system "./test", test_fixtures("test.mp3"), "-o", "test.torrent"
-    assert_predicate testpath/"test.torrent", :exist?
+    system "make", "tests"
   end
 end
